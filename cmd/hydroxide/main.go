@@ -293,7 +293,7 @@ func main() {
 				log.Fatal(err)
 			}
 
-			a, err = c.Auth(username, loginPassword, authInfo)
+			a, err = c.Auth(username, loginPassword, authInfo, nil)
 			if err != nil {
 				log.Fatal(err)
 			}

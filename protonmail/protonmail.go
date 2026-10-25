@@ -26,13 +26,22 @@ type resp struct {
 }
 
 func (r *resp) Err() error {
-	if err := r.RawAPIError; err != nil {
-		return &APIError{
-			Code:    r.Code,
-			Message: err.Message,
-		}
+	rawErr := r.RawAPIError
+	if rawErr == nil {
+		return nil
 	}
-	return nil
+
+	apiErr := APIError{Code: r.Code, Message: rawErr.Message}
+	switch r.Code {
+	case 9001:
+		humanVerifErr := &HumanVerificationRequiredError{APIError: apiErr}
+		if err := json.Unmarshal(rawErr.Details, &humanVerifErr.Details); err != nil {
+			return err
+		}
+		return humanVerifErr
+	default:
+		return &apiErr
+	}
 }
 
 type maybeError interface {
@@ -41,15 +50,30 @@ type maybeError interface {
 
 type RawAPIError struct {
 	Message string `json:"Error"`
+	Details json.RawMessage
 }
 
 type APIError struct {
 	Code    int
-	Message string
+	Message string `json:"Error"`
 }
 
 func (err *APIError) Error() string {
 	return fmt.Sprintf("[%v] %v", err.Code, err.Message)
+}
+
+type HumanVerificationDetails struct {
+	Methods []string `json:"HumanVerificationMethods"`
+	Token   string   `json:"HumanVerificationToken"`
+}
+
+type HumanVerificationRequiredError struct {
+	APIError
+	Details HumanVerificationDetails
+}
+
+func (err *HumanVerificationRequiredError) Unwrap() error {
+	return &err.APIError
 }
 
 type Timestamp int64

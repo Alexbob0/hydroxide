@@ -109,7 +109,7 @@ func (resp *authResp) auth() *Auth {
 	return auth
 }
 
-func (c *Client) Auth(username, password string, info *AuthInfo) (*Auth, error) {
+func (c *Client) Auth(username, password string, info *AuthInfo, hv *HumanVerificationDetails) (*Auth, error) {
 	if info == nil {
 		var err error
 		if info, err = c.AuthInfo(username); err != nil {
@@ -132,6 +132,11 @@ func (c *Client) Auth(username, password string, info *AuthInfo) (*Auth, error) 
 	req, err := c.newJSONRequest(http.MethodPost, "/auth", reqData)
 	if err != nil {
 		return nil, err
+	}
+
+	if hv != nil {
+		req.Header.Set("x-pm-human-verification-token-type", strings.Join(hv.Methods, ","))
+		req.Header.Set("x-pm-human-verification-token", hv.Token)
 	}
 
 	var respData authResp

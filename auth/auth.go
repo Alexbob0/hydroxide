@@ -129,7 +129,7 @@ func authenticate(c *protonmail.Client, cachedAuth *CachedAuth, username string)
 			return nil, fmt.Errorf("cannot re-authenticate: failed to get auth info: %v", err)
 		}
 
-		auth, err = c.Auth(username, cachedAuth.LoginPassword, authInfo)
+		auth, err = c.Auth(username, cachedAuth.LoginPassword, authInfo, nil)
 		if err != nil {
 			return nil, fmt.Errorf("cannot re-authenticate: %v", err)
 		}
