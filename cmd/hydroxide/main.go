@@ -4,12 +4,15 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/tls"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
@@ -294,6 +297,21 @@ func main() {
 			}
 
 			a, err = c.Auth(username, loginPassword, authInfo, nil)
+			var humanVerifErr *protonmail.HumanVerificationRequiredError
+			if errors.As(err, &humanVerifErr) {
+				q := make(url.Values)
+				q.Set("methods", strings.Join(humanVerifErr.Details.Methods, ","))
+				q.Set("token", humanVerifErr.Details.Token)
+
+				log.Print("Human verification required.")
+				log.Print("Please open the following URL and press Enter once the challenge has been completed:")
+				log.Print("https://verify.proton.me/?" + q.Encode())
+
+				scanner := bufio.NewScanner(os.Stdin)
+				scanner.Scan()
+
+				a, err = c.Auth(username, loginPassword, authInfo, &humanVerifErr.Details)
+			}
 			if err != nil {
 				log.Fatal(err)
 			}
