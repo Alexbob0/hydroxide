@@ -555,7 +555,7 @@ func (mbox *mailbox) CopyMessages(uid bool, seqSet *imap.SeqSet, destName string
 		return err
 	}
 
-	dest := mbox.u.getMailbox(destName)
+	dest := mbox.u.lookupMailbox(destName)
 	if dest == nil {
 		return imapbackend.ErrNoSuchMailbox
 	}
@@ -576,7 +576,7 @@ func (mbox *mailbox) MoveMessages(uid bool, seqSet *imap.SeqSet, destName string
 		return err
 	}
 
-	dest := mbox.u.getMailbox(destName)
+	dest := mbox.u.lookupMailbox(destName)
 	if dest == nil {
 		return imapbackend.ErrNoSuchMailbox
 	}

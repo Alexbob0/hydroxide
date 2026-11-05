@@ -189,23 +189,8 @@ func (u *user) initMailboxes() error {
 		return err
 	}
 
-	for _, label := range labels {
-		if label.IsFolder() {
-			if _, ok := u.mailboxes[label.ID]; ok {
-				continue
-			}
-
-			u.mailboxes[label.ID], err = newMailbox(folderName(label), label.ID, nil, u)
-			if err != nil {
-				return err
-			}
-		} else {
-			if _, ok := u.flags[label.ID]; ok {
-				continue
-			}
-
-			u.flags[label.ID] = labelNameToFlag(label.Name)
-		}
+	if _, err := u.updateLabels(labels); err != nil {
+		return err
 	}
 
 	counts, err := u.c.CountMessages("")
@@ -220,6 +205,85 @@ func (u *user) initMailboxes() error {
 		}
 	}
 
+	return nil
+}
+
+// updateLabels updates mailboxes and flags to match the user's labels: folders
+// become mailboxes, other labels become flags. It returns the mailboxes that
+// have been added. The caller must hold the user lock.
+func (u *user) updateLabels(labels []*protonmail.Label) ([]*mailbox, error) {
+	var added []*mailbox
+	seen := make(map[string]struct{}, len(labels))
+	for _, label := range labels {
+		if isSystemLabel(label.ID) {
+			continue
+		}
+		seen[label.ID] = struct{}{}
+
+		if label.IsFolder() {
+			delete(u.flags, label.ID)
+
+			name := folderName(label)
+			if mbox, ok := u.mailboxes[label.ID]; ok && mbox.name == name {
+				continue
+			}
+
+			// New or renamed folder
+			mbox, err := newMailbox(name, label.ID, nil, u)
+			if err != nil {
+				return added, err
+			}
+			u.mailboxes[label.ID] = mbox
+			added = append(added, mbox)
+		} else {
+			delete(u.mailboxes, label.ID)
+			u.flags[label.ID] = labelNameToFlag(label.Name)
+		}
+	}
+
+	for labelID := range u.mailboxes {
+		if _, ok := seen[labelID]; !ok && !isSystemLabel(labelID) {
+			delete(u.mailboxes, labelID)
+		}
+	}
+	for labelID := range u.flags {
+		if _, ok := seen[labelID]; !ok && !isSystemLabel(labelID) {
+			delete(u.flags, labelID)
+		}
+	}
+
+	return added, nil
+}
+
+// refreshLabels fetches the user's labels and updates mailboxes and flags.
+func (u *user) refreshLabels() error {
+	labels, err := u.c.ListLabels(protonmail.LabelMessage, protonmail.LabelFolder)
+	if err != nil {
+		return err
+	}
+
+	u.Lock()
+	added, err := u.updateLabels(labels)
+	u.Unlock()
+	if err != nil || len(added) == 0 {
+		return err
+	}
+
+	counts, err := u.c.CountMessages("")
+	if err != nil {
+		return err
+	}
+
+	for _, mbox := range added {
+		for _, count := range counts {
+			if count.LabelID == mbox.label {
+				mbox.Lock()
+				mbox.total = count.Total
+				mbox.unread = count.Unread
+				mbox.Unlock()
+			}
+		}
+	}
 	return nil
 }
 
@@ -269,8 +333,22 @@ func (u *user) hasChildren(name string) bool {
 	return false
 }
 
+// lookupMailbox is like getMailbox, but if the mailbox doesn't exist it
+// fetches labels again: the folder may have been created since the last event.
+func (u *user) lookupMailbox(name string) *mailbox {
+	if mbox := u.getMailbox(name); mbox != nil {
+		return mbox
+	}
+
+	if err := u.refreshLabels(); err != nil {
+		log.Printf("cannot refresh labels: %v", err)
+		return nil
+	}
+	return u.getMailbox(name)
+}
+
 func (u *user) GetMailbox(name string) (imapbackend.Mailbox, error) {
-	mbox := u.getMailbox(name)
+	mbox := u.lookupMailbox(name)
 	if mbox == nil {
 		return nil, imapbackend.ErrNoSuchMailbox
 	}
@@ -358,6 +436,15 @@ func (u *user) receiveEvents(updates chan<- imapbackend.Update, events <-chan *p
 				log.Printf("cannot reinitialize mailboxes: %v", err)
 			}
 		} else {
+			if len(event.Labels) > 0 {
+				// A folder may have been created, renamed or deleted:
+				// handle that before messages are added to it
+				log.Println("Received label events, refreshing labels")
+				if err := u.refreshLabels(); err != nil {
+					log.Printf("cannot refresh labels: %v", err)
+				}
+			}
+
 			for _, eventMessage := range event.Messages {
 				switch eventMessage.Action {
 				case protonmail.EventCreate:
