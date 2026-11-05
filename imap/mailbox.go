@@ -322,15 +322,15 @@ func (mbox *mailbox) matchMessage(seqNum, uid uint32, msg *protonmail.Message, c
 
 	flags := make(map[string]bool)
 	for _, flag := range mbox.fetchFlags(msg) {
-		flags[flag] = true
+		flags[imap.CanonicalFlag(flag)] = true
 	}
 	for _, f := range c.WithFlags {
-		if !flags[f] {
+		if !flags[imap.CanonicalFlag(f)] {
 			return false
 		}
 	}
 	for _, f := range c.WithoutFlags {
-		if flags[f] {
+		if flags[imap.CanonicalFlag(f)] {
 			return false
 		}
 	}

@@ -361,7 +361,7 @@ func (u *user) getFlag(name string) string {
 	defer u.Unlock()
 
 	for label, flag := range u.flags {
-		if flag == name {
+		if strings.EqualFold(flag, name) {
 			return label
 		}
 	}
