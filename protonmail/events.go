@@ -18,7 +18,7 @@ type Event struct {
 	Messages []*EventMessage
 	Contacts []*EventContact
 	//ContactEmails
-	//Labels
+	Labels []*EventLabel
 	//User
 	//Members
 	//Domains
@@ -152,6 +152,14 @@ func (em *EventMessage) UnmarshalJSON(b []byte) error {
 		return json.Unmarshal(raw.Message, em.Updated)
 	}
 	return nil
+}
+
+type EventLabel struct {
+	ID     string
+	Action EventAction
+
+	// Only populated for EventCreate and EventUpdate
+	Label *Label
 }
 
 type EventContact struct {
