@@ -1,6 +1,7 @@
 package imap
 
 import (
+	"errors"
 	"log"
 	"strings"
 	"sync"
@@ -367,8 +368,62 @@ func (u *user) getFlag(name string) string {
 	return ""
 }
 
+// folderColor is the color of folders created via IMAP.
+const folderColor = "#f66"
+
 func (u *user) CreateMailbox(name string) error {
-	return errNotYetImplemented // TODO
+	name = strings.TrimSuffix(name, delimiter)
+	if name == "" {
+		return errors.New("invalid mailbox name")
+	}
+	if u.lookupMailbox(name) != nil {
+		return imapbackend.ErrMailboxAlreadyExists
+	}
+
+	leaf := name
+	var parentID string
+	if i := strings.LastIndex(name, delimiter); i >= 0 {
+		parentName := name[:i]
+		leaf = name[i+1:]
+
+		parent := u.getMailbox(parentName)
+		if parent == nil {
+			// Create superior hierarchical names, as suggested by RFC 3501
+			if err := u.CreateMailbox(parentName); err != nil {
+				return err
+			}
+			if parent = u.getMailbox(parentName); parent == nil {
+				return imapbackend.ErrNoSuchMailbox
+			}
+		}
+		if isSystemLabel(parent.label) {
+			return errors.New("cannot create a folder inside a system mailbox")
+		}
+		parentID = parent.label
+	}
+	if leaf == "" {
+		return errors.New("invalid mailbox name")
+	}
+
+	label, err := u.c.CreateLabel(&protonmail.CreateLabelReq{
+		Name:     leaf,
+		Color:    folderColor,
+		Type:     protonmail.LabelFolder,
+		ParentID: parentID,
+	})
+	if err != nil {
+		return err
+	}
+
+	u.Lock()
+	defer u.Unlock()
+
+	mbox, err := newMailbox(name, label.ID, nil, u)
+	if err != nil {
+		return err
+	}
+	u.mailboxes[label.ID] = mbox
+	return nil
 }
 
 func (u *user) DeleteMailbox(name string) error {
