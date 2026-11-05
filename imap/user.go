@@ -148,6 +148,24 @@ func labelNameToFlag(s string) string {
 	return sb.String()
 }
 
+// folderName returns the mailbox name of a folder. Sub-folders are separated
+// from their parent folder by the hierarchy delimiter, e.g. "Parent/Child".
+func folderName(label *protonmail.Label) string {
+	if label.Path != "" {
+		return label.Path
+	}
+	return label.Name
+}
+
+func isSystemLabel(labelID string) bool {
+	for _, data := range systemMailboxes {
+		if data.label == labelID {
+			return true
+		}
+	}
+	return false
+}
+
 func (u *user) initMailboxes() error {
 	u.Lock()
 	defer u.Unlock()
@@ -166,18 +184,18 @@ func (u *user) initMailboxes() error {
 		u.flags[data.label] = data.name
 	}
 
-	labels, err := u.c.ListLabels()
+	labels, err := u.c.ListLabels(protonmail.LabelMessage, protonmail.LabelFolder)
 	if err != nil {
 		return err
 	}
 
 	for _, label := range labels {
-		if label.Exclusive == 1 {
+		if label.IsFolder() {
 			if _, ok := u.mailboxes[label.ID]; ok {
 				continue
 			}
 
-			u.mailboxes[label.ID], err = newMailbox(label.Name, label.ID, nil, u)
+			u.mailboxes[label.ID], err = newMailbox(folderName(label), label.ID, nil, u)
 			if err != nil {
 				return err
 			}
@@ -236,6 +254,19 @@ func (u *user) getMailbox(name string) *mailbox {
 		}
 	}
 	return nil
+}
+
+func (u *user) hasChildren(name string) bool {
+	u.Lock()
+	defer u.Unlock()
+
+	prefix := name + delimiter
+	for _, mbox := range u.mailboxes {
+		if strings.HasPrefix(mbox.name, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (u *user) GetMailbox(name string) (imapbackend.Mailbox, error) {

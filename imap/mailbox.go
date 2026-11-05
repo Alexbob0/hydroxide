@@ -52,8 +52,18 @@ func (mbox *mailbox) Name() string {
 }
 
 func (mbox *mailbox) Info() (*imap.MailboxInfo, error) {
+	// System mailboxes cannot have children, folders can
+	var attr string
+	if isSystemLabel(mbox.label) {
+		attr = imap.NoInferiorsAttr
+	} else if mbox.u.hasChildren(mbox.name) {
+		attr = imap.HasChildrenAttr
+	} else {
+		attr = imap.HasNoChildrenAttr
+	}
+
 	return &imap.MailboxInfo{
-		Attributes: append([]string{imap.NoInferiorsAttr}, mbox.attrs...),
+		Attributes: append([]string{attr}, mbox.attrs...),
 		Delimiter:  delimiter,
 		Name:       mbox.name,
 	}, nil
